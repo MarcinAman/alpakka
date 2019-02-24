@@ -80,6 +80,24 @@ import akka.util.ByteString
 
 /** Internal Api */
 @InternalApi private[s3] object S3Stream {
+  def deleteBucket(location: S3Location): Source[Done, NotUsed] = ???
+
+  def makeBucket(location: S3Location): Source[Done, NotUsed] = {
+
+    def makeBucketCall()(implicit mat: ActorMaterializer,
+                         attributes: Attributes): Future[Nothing] = {
+      implicit val sys: ActorSystem = mat.system
+      implicit val conf: S3Settings = resolveSettings()
+      signAndGetAs(HttpRequests.makeBucket(bucket = location.bucket, location))
+    }
+
+    Setup.source {
+      implicit mat =>
+        implicit attr =>
+          Source.fromFuture(makeBucketCall)
+    }.mapMaterializedValue(_ => NotUsed)
+  }
+
 
   import HttpRequests._
   import Marshalling._
