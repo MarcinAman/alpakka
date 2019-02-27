@@ -49,12 +49,10 @@ import scala.concurrent.{ExecutionContext, Future}
       .withUri(requestUri(bucket, None).withQuery(query))
   }
 
-  def makeBucket(bucket: String,
-                 s3Location: S3Location) // TODO location support
-                (implicit conf: S3Settings): HttpRequest =
-
+  def makeBucket(bucket: String, s3Location: S3Location) // TODO location support
+  (implicit conf: S3Settings): HttpRequest =
     HttpRequest(HttpMethods.POST)
-    .withHeaders(Host(requestAuthority(bucket, conf.s3RegionProvider.getRegion)))
+      .withHeaders(Host(requestAuthority(bucket, s3Location.key)))
       .withUri(requestUri(bucket, None))
 
   def getDownloadRequest(s3Location: S3Location,

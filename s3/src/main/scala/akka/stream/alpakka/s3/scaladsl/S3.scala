@@ -216,17 +216,19 @@ object S3 {
 
   def makeBucket(
       bucketName: String,
-      key: String = null
-                ): Source[Done,NotUsed] =
+      key: String = "us-east-1"
+  ): Source[Done, NotUsed] =
     S3Stream.makeBucket(
       S3Location(
-        bucket = bucketName, key = key
+        bucket = bucketName,
+        key = key
       )
     )
 
   def deleteBucket(
-                  bucketName: String, bucketKey: String
-                  ): Source[Done, NotUsed] =
+      bucketName: String,
+      bucketKey: String
+  ): Source[Done, NotUsed] =
     S3Stream.deleteBucket(
       S3Location(
         bucket = bucketName,
