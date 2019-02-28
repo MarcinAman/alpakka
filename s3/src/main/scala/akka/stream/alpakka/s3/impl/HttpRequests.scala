@@ -49,11 +49,11 @@ import scala.concurrent.{ExecutionContext, Future}
       .withUri(requestUri(bucket, None).withQuery(query))
   }
 
-  def makeBucket(bucket: String)
-  (implicit conf: S3Settings): HttpRequest =
-    HttpRequest(HttpMethods.PUT)
-      .withHeaders(Host(requestAuthority(bucket, conf.s3RegionProvider.getRegion)))
-      .withUri(requestUri(bucket, None))
+  def makeBucket(bucket: String)(implicit conf: S3Settings): HttpRequest =
+    genericBucketRequest(bucket = bucket, httpMethod = HttpMethods.PUT)
+
+  def deleteBucket(bucket: String)(implicit conf: S3Settings): HttpRequest =
+    genericBucketRequest(bucket = bucket, httpMethod = HttpMethods.DELETE)
 
   def getDownloadRequest(s3Location: S3Location,
                          method: HttpMethod = HttpMethods.GET,
@@ -211,4 +211,10 @@ import scala.concurrent.{ExecutionContext, Future}
       case (Some(proxy), _) => uri.withPort(proxy.port).withScheme(proxy.scheme).withHost(proxy.host)
     }
   }
+
+  private[impl] def genericBucketRequest(bucket: String,
+                                         httpMethod: HttpMethod)(implicit conf: S3Settings): HttpRequest =
+    HttpRequest(httpMethod)
+      .withHeaders(Host(requestAuthority(bucket, conf.s3RegionProvider.getRegion)))
+      .withUri(requestUri(bucket, None))
 }

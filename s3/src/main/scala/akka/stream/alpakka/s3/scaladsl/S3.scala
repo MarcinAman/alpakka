@@ -221,12 +221,8 @@ object S3 {
 
   def deleteBucket(
       bucketName: String,
-      bucketKey: String
   ): Source[Done, NotUsed] =
     S3Stream.deleteBucket(
-      S3Location(
-        bucket = bucketName,
-        key = bucketKey
-      )
+      bucketName: String
     )
 }

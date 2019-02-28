@@ -80,28 +80,25 @@ import akka.util.ByteString
 
 /** Internal Api */
 @InternalApi private[s3] object S3Stream {
-  def deleteBucket(location: S3Location): Source[Done, NotUsed] = ???
-
-  def makeBucket(bucketName: String): Source[Done, NotUsed] = {
-
-    def makeBucketCall(implicit mat: ActorMaterializer, attr: Attributes): Future[ResponseEntity] = {
-      implicit val sys: ActorSystem = mat.system
-      implicit val conf: S3Settings = resolveSettings()
-
-      signAndGetAs(HttpRequests.makeBucket(bucketName))
-    }
-
+  private[this] def genericBucketCall(bucketName: String, httpMethod: HttpMethod): Source[Done, NotUsed] = // TODO fix issue with unmarshallers
     Setup
       .source { implicit mat => implicit attr =>
-        Source.fromFuture(makeBucketCall)
+        implicit val sys: ActorSystem = mat.system
+        implicit val conf: S3Settings = resolveSettings()
+
+        val bucketCall = signAndGetAs(HttpRequests.genericBucketRequest(bucketName, httpMethod))
+
+        Source.fromFuture(bucketCall)
       }
       .mapMaterializedValue(_ => NotUsed)
       .map(_ => Done)
-  }
 
   import HttpRequests._
-
   import Marshalling._
+
+  def deleteBucket(bucketName: String): Source[Done, NotUsed] = genericBucketCall(bucketName, HttpMethods.DELETE)
+
+  def makeBucket(bucketName: String): Source[Done, NotUsed] = genericBucketCall(bucketName, HttpMethods.PUT)
 
   val MinChunkSize = 5242880 //in bytes
   // def because tokens can expire
