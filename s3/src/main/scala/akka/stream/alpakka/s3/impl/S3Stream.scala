@@ -82,12 +82,13 @@ import akka.util.ByteString
 @InternalApi private[s3] object S3Stream {
   def deleteBucket(location: S3Location): Source[Done, NotUsed] = ???
 
-  def makeBucket(location: S3Location): Source[Done, NotUsed] = {
+  def makeBucket(bucketName: String): Source[Done, NotUsed] = {
 
-    def makeBucketCall()(implicit mat: ActorMaterializer, attributes: Attributes): Future[ResponseEntity] = {
+    def makeBucketCall(implicit mat: ActorMaterializer, attr: Attributes): Future[ResponseEntity] = {
       implicit val sys: ActorSystem = mat.system
       implicit val conf: S3Settings = resolveSettings()
-      signAndGetAs(HttpRequests.makeBucket(bucket = location.bucket, location))
+
+      signAndGetAs(HttpRequests.makeBucket(bucketName))
     }
 
     Setup
@@ -99,6 +100,7 @@ import akka.util.ByteString
   }
 
   import HttpRequests._
+
   import Marshalling._
 
   val MinChunkSize = 5242880 //in bytes

@@ -215,15 +215,9 @@ object S3 {
       )
 
   def makeBucket(
-      bucketName: String,
-      key: String = "us-east-1"
+      bucketName: String
   ): Source[Done, NotUsed] =
-    S3Stream.makeBucket(
-      S3Location(
-        bucket = bucketName,
-        key = key
-      )
-    )
+    S3Stream.makeBucket(bucketName)
 
   def deleteBucket(
       bucketName: String,
