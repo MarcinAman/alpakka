@@ -223,10 +223,7 @@ object S3 {
    * @return [[akka.stream.scaladsl.Source Source]] with type [[Done]] as API doesn't return any additional information
    */
   def makeBucket(bucketName: String): Source[Done, NotUsed] =
-    S3Stream.genericBucketCall(
-      bucket = bucketName,
-      method = HttpMethods.PUT
-    )
+    S3Stream.makeBucket(bucketName)
 
   /**
    * Delete bucket with a given name
@@ -237,9 +234,6 @@ object S3 {
    * @return [[akka.stream.scaladsl.Source Source]] with type [[Done]] as API doesn't return any additional information
    */
   def deleteBucket(bucketName: String): Source[Done, NotUsed] =
-    S3Stream.genericBucketCall(
-      bucket = bucketName,
-      method = HttpMethods.DELETE
-    )
+    S3Stream.deleteBucket(bucketName)
 
 }

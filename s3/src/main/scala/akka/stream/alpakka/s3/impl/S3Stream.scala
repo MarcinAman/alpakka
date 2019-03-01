@@ -252,6 +252,18 @@ import akka.util.ByteString
       case _ => downloadRequest
     }
 
+  def makeBucket(bucket: String): Source[Done, NotUsed] =
+    genericBucketCall(
+      bucket = bucket,
+      method = HttpMethods.PUT
+    )
+
+  def deleteBucket(bucket: String): Source[Done, NotUsed] =
+    genericBucketCall(
+      bucket = bucket,
+      method = HttpMethods.DELETE
+    )
+
   def genericBucketCall(bucket: String, method: HttpMethod): Source[Done, NotUsed] =
     request(s3Location = S3Location(bucket, ""), method = method).map(_ => Done)
 

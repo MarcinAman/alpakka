@@ -446,4 +446,26 @@ object S3 {
   private def func[T, R](f: T => R) = new akka.japi.function.Function[T, R] {
     override def apply(param: T): R = f(param)
   }
+
+  /**
+   * Create new bucket with a given name
+   *
+   * @see https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUT.html
+   *
+   * @param bucketName bucket name
+   * @return [[akka.stream.javadsl.Source Source]] with type [[Done]] as API doesn't return any additional information
+   */
+  def makeBucket(bucketName: String): Source[Done, NotUsed] =
+    S3Stream.makeBucket(bucketName).asJava
+
+  /**
+   * Delete bucket with a given name
+   *
+   * @see https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketDELETE.html
+   *
+   * @param bucketName bucket name
+   * @return [[akka.stream.javadsl.Source Source]] with type [[Done]] as API doesn't return any additional information
+   */
+  def deleteBucket(bucketName: String): Source[Done, NotUsed] =
+    S3Stream.deleteBucket(bucketName).asJava
 }
