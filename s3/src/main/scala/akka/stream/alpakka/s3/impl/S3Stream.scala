@@ -252,6 +252,9 @@ import akka.util.ByteString
       case _ => downloadRequest
     }
 
+  def genericBucketCall(bucket: String, method: HttpMethod): Source[Done, NotUsed] =
+    request(s3Location = S3Location(bucket, ""), method = method).map(_ => Done)
+
   /**
    * Uploads a stream of ByteStrings to a specified location as a multipart upload.
    */
