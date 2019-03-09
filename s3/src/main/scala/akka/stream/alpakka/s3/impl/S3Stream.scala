@@ -8,22 +8,22 @@ import java.time.{Instant, LocalDate}
 
 import akka.actor.ActorSystem
 import akka.annotation.InternalApi
-
-import scala.collection.immutable.Seq
-import scala.concurrent.Future
-import scala.util.{Failure, Success}
-import akka.{Done, NotUsed}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.StatusCodes.{NoContent, NotFound, OK}
 import akka.http.scaladsl.model.headers.{`Content-Length`, `Content-Type`, ByteRange, CustomHeader}
 import akka.http.scaladsl.model.{headers => http, _}
 import akka.http.scaladsl.unmarshalling.{Unmarshal, Unmarshaller}
-import akka.stream.{ActorMaterializer, Attributes, Materializer}
-import akka.stream.alpakka.s3.impl.auth.{CredentialScope, Signer, SigningKey}
 import akka.stream.alpakka.s3._
 import akka.stream.alpakka.s3.headers.ServerSideEncryption
+import akka.stream.alpakka.s3.impl.auth.{CredentialScope, Signer, SigningKey}
 import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, Sink, Source}
+import akka.stream.{ActorMaterializer, Attributes, Materializer}
 import akka.util.ByteString
+import akka.{Done, NotUsed}
+
+import scala.collection.immutable.Seq
+import scala.concurrent.Future
+import scala.util.{Failure, Success}
 
 /** Internal Api */
 @InternalApi private[s3] final case class S3Location(bucket: String, key: String)
@@ -259,19 +259,45 @@ import akka.util.ByteString
     }
 
   def makeBucket(bucket: String): Source[Done, NotUsed] =
-    genericBucketCall(
+    bucketManagementRequest(
       bucket = bucket,
       method = HttpMethods.PUT
     )
 
   def deleteBucket(bucket: String): Source[Done, NotUsed] =
-    genericBucketCall(
+    bucketManagementRequest(
       bucket = bucket,
       method = HttpMethods.DELETE
     )
 
-  def genericBucketCall(bucket: String, method: HttpMethod): Source[Done, NotUsed] =
-    request(s3Location = S3Location(bucket, ""), method = method).map(_ => Done)
+  def bucketManagementRequest(bucket: String, method: HttpMethod): Source[Done, NotUsed] =
+    Setup
+      .source { implicit mat => implicit attr =>
+        import mat.executionContext
+
+        implicit val sys: ActorSystem = mat.system
+        implicit val conf: S3Settings = resolveSettings()
+
+        val location = S3Location(bucket = bucket, key = "")
+
+        signAndRequest(
+          requestHeaders(
+            HttpRequests.bucketManagementRequest(location, method),
+            None
+          )
+        ).flatMapConcat { request =>
+          if (request.status.isSuccess()) {
+            Source.single(Done)
+          } else {
+            Source.fromFuture {
+              Unmarshal(request.entity).to[String].map { err =>
+                throw new S3Exception(err)
+              }
+            }
+          }
+        }
+      }
+      .mapMaterializedValue(_ => NotUsed)
 
   /**
    * Uploads a stream of ByteStrings to a specified location as a multipart upload.

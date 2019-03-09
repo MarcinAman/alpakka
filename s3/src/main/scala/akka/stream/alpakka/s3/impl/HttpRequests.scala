@@ -49,6 +49,10 @@ import scala.concurrent.{ExecutionContext, Future}
       .withUri(requestUri(bucket, None).withQuery(query))
   }
 
+  def bucketManagementRequest(s3Location: S3Location, method: HttpMethod)(implicit conf: S3Settings): HttpRequest =
+    s3Request(s3Location = s3Location, method = method)
+      .withDefaultHeaders()
+
   def getDownloadRequest(s3Location: S3Location,
                          method: HttpMethod = HttpMethods.GET,
                          s3Headers: Seq[HttpHeader] = Seq.empty,
