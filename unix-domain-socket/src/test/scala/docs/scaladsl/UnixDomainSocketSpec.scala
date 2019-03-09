@@ -6,10 +6,11 @@ package docs.scaladsl
 
 import java.io.{File, IOException}
 import java.nio.file.Files
+import java.util.concurrent.TimeUnit
 
 import akka.Done
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
+import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.alpakka.unixdomainsocket.scaladsl.UnixDomainSocket
 import akka.stream.scaladsl.{Flow, Sink, Source}
 import akka.testkit._
@@ -31,52 +32,71 @@ class UnixDomainSocketSpec
 
   implicit val ma: ActorMaterializer = ActorMaterializer()
 
+  private val dir = Files.createTempDirectory("UnixDomainSocketSpec")
+
   "A Unix Domain Socket" should {
-    "receive what is sent" in {
+    "receive some bytes" in {
       //#binding
       val file: java.io.File = // ...
         //#binding
-        Files.createTempFile("UnixDomainSocketSpec1", ".sock").toFile
-      file.delete()
-      file.deleteOnExit()
+        dir.resolve("sock1").toFile
+
+      val received = Promise[ByteString]
+
+      val serverSideFlow = Flow[ByteString]
+        .buffer(1, OverflowStrategy.backpressure)
+        .wireTap(bytes => received.success(bytes))
 
       //#binding
       val binding: Future[UnixDomainSocket.ServerBinding] =
-        UnixDomainSocket().bindAndHandle(Flow.fromFunction(identity), file)
+        UnixDomainSocket().bindAndHandle(serverSideFlow, file)
       //#binding
 
       //#outgoingConnection
-      binding.flatMap { connection =>
+      binding.flatMap { _ => // connection
         val sendBytes = ByteString("Hello")
+        Source
+          .single(sendBytes)
+          .via(UnixDomainSocket().outgoingConnection(file))
+          .runWith(Sink.ignore)
+        //#outgoingConnection
+        received.future.map(receiveBytes => assert(receiveBytes == sendBytes))
+        //#outgoingConnection
+      }
+      //#outgoingConnection
+    }
+
+    "send and receive more ten times the size of a buffer" ignore {
+      val BufferSizeBytes = 64 * 1024
+
+      val file = dir.resolve("sock2").toFile
+
+      val binding: Future[UnixDomainSocket.ServerBinding] =
+        UnixDomainSocket().bindAndHandle(Flow.fromFunction(identity), file, halfClose = true)
+
+      binding.flatMap { connection =>
+        val sendBytes = ByteString(Array.ofDim[Byte](BufferSizeBytes * 10))
         val result: Future[ByteString] =
           Source
             .single(sendBytes)
             .via(UnixDomainSocket().outgoingConnection(file))
-            .runWith(Sink.head)
-        //#outgoingConnection
+            .runWith(Sink.fold(ByteString.empty) { case (acc, b) => acc ++ b })
         result
           .map(receiveBytes => assert(receiveBytes == sendBytes))
           .flatMap {
             case `succeed` => connection.unbind().map(_ => succeed)
             case failedAssertion => failedAssertion
           }
-      //#outgoingConnection
       }
-      //#outgoingConnection
     }
 
     "allow the client to close the connection" in {
-      val file = Files.createTempFile("UnixDomainSocketSpec2", ".sock").toFile
-      file.delete()
-      file.deleteOnExit()
+      val file = dir.resolve("sock3").toFile
 
       val sendBytes = ByteString("Hello")
 
       val binding =
-        UnixDomainSocket().bindAndHandle(Flow[ByteString]
-                                           .delay(5.seconds)
-                                           .map(identity),
-                                         file)
+        UnixDomainSocket().bindAndHandle(Flow[ByteString].delay(5.seconds), file)
 
       binding.flatMap { connection =>
         Source
@@ -90,9 +110,7 @@ class UnixDomainSocketSpec
     }
 
     "close the server once the client is also closed" in {
-      val file = Files.createTempFile("UnixDomainSocketSpec3", ".sock").toFile
-      file.delete()
-      file.deleteOnExit()
+      val file = dir.resolve("sock4").toFile
 
       val sendBytes = ByteString("Hello")
       val receiving = Promise[Done]
@@ -116,6 +134,30 @@ class UnixDomainSocketSpec
       }
     }
 
+    "be able to materialize outgoing connection flow more than once" in {
+      def materialize(flow: Flow[ByteString, ByteString, _]): Future[Done] =
+        Source.single(ByteString("Hello")).via(flow).runWith(Sink.ignore)
+
+      val file = dir.resolve("sock5").toFile
+
+      val receivedLatch = new java.util.concurrent.CountDownLatch(2)
+
+      val serverSideFlow = Flow[ByteString]
+        .buffer(1, OverflowStrategy.backpressure)
+        .wireTap(_ => receivedLatch.countDown())
+
+      val _ = UnixDomainSocket().bindAndHandle(serverSideFlow, file)
+
+      val connection = UnixDomainSocket().outgoingConnection(file)
+
+      materialize(connection)
+      materialize(connection)
+
+      receivedLatch.await(5, TimeUnit.SECONDS)
+
+      succeed
+    }
+
     "not be able to bind to a non-existent file" in {
       val binding =
         UnixDomainSocket().bindAndHandle(Flow.fromFunction(identity), new File("/thisshouldnotexist"))
@@ -136,5 +178,6 @@ class UnixDomainSocketSpec
         case _: IOException => succeed
       }
     }
+
   }
 }
