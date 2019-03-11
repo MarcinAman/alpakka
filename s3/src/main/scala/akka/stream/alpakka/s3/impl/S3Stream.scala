@@ -270,7 +270,7 @@ import scala.util.{Failure, Success}
       method = HttpMethods.DELETE
     )
 
-  def bucketManagementRequest(bucket: String, method: HttpMethod): Source[Done, NotUsed] =
+  private def bucketManagementRequest(bucket: String, method: HttpMethod): Source[Done, NotUsed] =
     Setup
       .source { implicit mat => implicit attr =>
         import mat.executionContext
@@ -285,16 +285,17 @@ import scala.util.{Failure, Success}
             HttpRequests.bucketManagementRequest(location, method),
             None
           )
-        ).flatMapConcat { request =>
-          if (request.status.isSuccess()) {
-            Source.single(Done)
-          } else {
+        ).flatMapConcat {
+          case HttpResponse(status, _, entity, _) if status.isSuccess() =>
             Source.fromFuture {
-              Unmarshal(request.entity).to[String].map { err =>
+              entity.discardBytes().future()
+            }
+          case HttpResponse(_, _, entity, _) =>
+            Source.fromFuture {
+              Unmarshal(entity).to[String].map { err =>
                 throw new S3Exception(err)
               }
             }
-          }
         }
       }
       .mapMaterializedValue(_ => NotUsed)
