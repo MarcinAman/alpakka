@@ -8,6 +8,12 @@ import java.time.{Instant, LocalDate}
 
 import akka.actor.ActorSystem
 import akka.annotation.InternalApi
+import akka.dispatch.ExecutionContexts
+
+import scala.collection.immutable.Seq
+import scala.concurrent.Future
+import scala.util.{Failure, Success}
+import akka.{Done, NotUsed}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.StatusCodes.{NoContent, NotFound, OK}
 import akka.http.scaladsl.model.headers.{`Content-Length`, `Content-Type`, ByteRange, CustomHeader}
@@ -309,7 +315,7 @@ import scala.util.{Failure, Success}
       s3Headers: S3Headers,
       chunkSize: Int = MinChunkSize,
       chunkingParallelism: Int = 4
-  ): Sink[ByteString, Source[MultipartUploadResult, NotUsed]] =
+  ): Sink[ByteString, Future[MultipartUploadResult]] =
     chunkAndRequest(s3Location, contentType, s3Headers, chunkSize)(chunkingParallelism)
       .toMat(completionSink(s3Location, s3Headers.serverSideEncryption))(Keep.right)
 
@@ -345,7 +351,7 @@ import scala.util.{Failure, Success}
       s3Headers: S3Headers,
       chunkSize: Int = MinChunkSize,
       chunkingParallelism: Int = 4
-  ): RunnableGraph[Source[MultipartUploadResult, NotUsed]] = {
+  ): RunnableGraph[Future[MultipartUploadResult]] = {
 
     // Pre step get source meta to get content length (size of the object)
     val eventualMaybeObjectSize =
@@ -391,7 +397,7 @@ import scala.util.{Failure, Success}
                                       sse: Option[ServerSideEncryption])(
       implicit mat: ActorMaterializer,
       attr: Attributes
-  ): Source[CompleteMultipartUploadResult, NotUsed] = {
+  ): Future[CompleteMultipartUploadResult] = {
     def populateResult(result: CompleteMultipartUploadResult,
                        headers: Seq[HttpHeader]): CompleteMultipartUploadResult = {
       val versionId = headers.find(_.lowercaseName() == "x-amz-version-id").map(_.value())
@@ -409,6 +415,7 @@ import scala.util.{Failure, Success}
         completeMultipartUploadRequest(parts.head.multipartUpload, parts.map(p => p.index -> p.etag), headers)
       )
       .flatMapConcat(signAndGetAs[CompleteMultipartUploadResult](_, populateResult(_, _)))
+      .runWith(Sink.head)
   }
 
   /**
@@ -524,30 +531,31 @@ import scala.util.{Failure, Success}
   private def completionSink(
       s3Location: S3Location,
       sse: Option[ServerSideEncryption]
-  ): Sink[UploadPartResponse, Source[MultipartUploadResult, NotUsed]] =
+  ): Sink[UploadPartResponse, Future[MultipartUploadResult]] =
     Setup
       .sink { implicit mat => implicit attr =>
+        val sys = mat.system
+        import sys.dispatcher
         Sink
           .seq[UploadPartResponse]
           .mapMaterializedValue { responseFuture: Future[Seq[UploadPartResponse]] =>
-            Source
-              .fromFuture(responseFuture)
-              .flatMapConcat { responses: Seq[UploadPartResponse] =>
+            responseFuture
+              .flatMap { responses: Seq[UploadPartResponse] =>
                 val successes = responses.collect { case r: SuccessfulUploadPart => r }
                 val failures = responses.collect { case r: FailedUploadPart => r }
                 if (responses.isEmpty) {
-                  Source.failed(new RuntimeException("No Responses"))
+                  Future.failed(new RuntimeException("No Responses"))
                 } else if (failures.isEmpty) {
-                  Source.single(successes.sortBy(_.index))
+                  Future.successful(successes.sortBy(_.index))
                 } else {
-                  Source.failed(FailedUpload(failures.map(_.exception)))
+                  Future.failed(FailedUpload(failures.map(_.exception)))
                 }
               }
-              .flatMapConcat(completeMultipartUpload(s3Location, _, sse))
+              .flatMap(completeMultipartUpload(s3Location, _, sse))
           }
           .mapMaterializedValue(_.map(r => MultipartUploadResult(r.location, r.bucket, r.key, r.etag, r.versionId)))
       }
-      .mapMaterializedValue(s => Source.fromFuture(s).flatMapConcat(identity))
+      .mapMaterializedValue(_.flatMap(identity)(ExecutionContexts.sameThreadExecutionContext))
 
   private def signAndGetAs[T](
       request: HttpRequest
